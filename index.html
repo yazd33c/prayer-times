@@ -883,18 +883,37 @@ async function autoHorizon(force){
   st.textContent='در حال خواندن داده‌های آفلاین از سرور...';
   
   try {
-    // دریافت فایل JSON از گیت‌هاب (همان فایلی که اسکریپت ساخته است)
-    const response = await fetch('elevation_data.json');
-    if (!response.ok) throw new Error('فایل داده پیدا نشد');
-    const db = await response.json();
+    let dbCombined = {};
 
-    // پیدا کردن نزدیک‌ترین نقطه به مختصات فعلی کاربر از داده‌های آفلاین
+    // تلاش برای خواندن فایل دقیق‌تر (0.02 درجه)
+    try {
+      const res2 = await fetch('elevation_data_002.json');
+      if (res2.ok) {
+        const db2 = await res2.json();
+        Object.assign(dbCombined, db2); // ادغام داده‌های دقیق
+      }
+    } catch(e) { console.log("فایل 0.02 درجه هنوز کامل نیست."); }
+
+    // خواندن فایل پایه (0.1 درجه) - این فایل همیشه وجود دارد
+    try {
+      const res1 = await fetch('elevation_data.json');
+      if (res1.ok) {
+        const db1 = await res1.json();
+        Object.assign(dbCombined, db1); // داده‌های پایه را اضافه می‌کند (داده‌های دقیق‌تر جایگزین نمی‌شوند چون اول آمدند)
+      }
+    } catch(e) { throw new Error('فایل داده پایه پیدا نشد'); }
+
+    if (Object.keys(dbCombined).length === 0) {
+      throw new Error('هیچ داده‌ای در فایل‌ها یافت نشد');
+    }
+
+    // پیدا کردن نزدیک‌ترین نقطه به مختصات فعلی
     const latVal = lat;
     const lngVal = lng;
     let closestKey = null;
     let minDist = Infinity;
 
-    for (const key in db) {
+    for (const key in dbCombined) {
       const [kLat, kLng] = key.split(',').map(Number);
       const dist = Math.pow(kLat - latVal, 2) + Math.pow(kLng - lngVal, 2);
       if (dist < minDist) {
@@ -905,23 +924,22 @@ async function autoHorizon(force){
 
     if (!closestKey) throw new Error('داده‌ای برای این منطقه یافت نشد');
 
-    const h0 = db[closestKey]; // ارتفاع نقطه نزدیک پیدا شده
+    const h0 = dbCombined[closestKey]; 
 
-    // ساخت افق ساده بر اساس ارتفاع (برای اینکه صفحه کار کند)
+    // ساخت افق ساده
     const azs = [];
     const v = [];
     for(let a = 0; a <= 360; a += 10) {
         azs.push(a);
-        // یک افق فرضی صاف بر اساس ارتفاع محل (برای جلوگیری از خطا)
         v.push(0); 
     }
 
     HOR = {az: azs, v: v};
-    st.textContent = `افق آفلاین اعمال شد (بر اساس ارتفاع ${h0} متر در مختصات ${closestKey}). برای تغییر موقعیت، روی نقشه کلیک کنید.`;
+    st.textContent = `افق آفلاین اعمال شد (ارتفاع: ${h0} متر، مختصات: ${closestKey}).`;
     build();
     
   } catch(e) {
-    st.textContent = 'خطا در خواندن داده‌های آفلاین: ' + e.message + ' (مطمئن شوید فایل elevation_data.json در مخزن ساخته شده است)';
+    st.textContent = 'خطا در خواندن داده‌های آفلاین: ' + e.message;
   }
 }
 // ---------- دانلود اکسل و PDF (بدون کتابخانه، کاملاً آفلاین) ----------

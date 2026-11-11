@@ -2,7 +2,8 @@ name: Fetch Elevation Data
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    # هر ساعت یک بار اجرا می‌شود
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -26,6 +27,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add elevation_data.json progress.json
-          git diff --staged --quiet || git commit -m "Update elevation data"
+          git add elevation_data_002.json progress_002.json
+          git diff --staged --quiet || git commit -m "Update elevation data 0.02"
           git push

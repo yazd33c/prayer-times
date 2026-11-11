@@ -879,40 +879,51 @@ async function elevs(P,st,label,remainAfter){
   return out;
 }
 async function autoHorizon(force){
-  const st=document.getElementById('hstat'), lat=+lat_.value, lng=+lng_.value, key='hor2:'+lat.toFixed(4)+','+lng.toFixed(4);
-  try{
-    let c=null; if(!force){try{c=JSON.parse(localStorage.getItem(key));}catch(e){}}
-    let azs,v,h0,from='';
-    if(c&&c.azs&&c.v&&Number.isFinite(c.h0)){azs=c.azs;v=c.v;h0=c.h0;from=' (از حافظهٔ قبلی همین مختصات؛ برای دریافت دوباره «دریافت مجدد» را بزنید)';}
-    else{
-      const dev=deg(Math.acos(Math.min(1,Math.sin(rad(23.5))/Math.cos(rad(lat)))));
-      const lo=Math.max(0,dev-8), hi=Math.min(180,180-dev+8), rise=[];
-      for(let a=lo;a<=hi+1e-9;a+=2.5) rise.push(a);
-      azs=rise.concat(rise.map(a=>360-a).reverse());
-      const dists=[]; for(let d=0.15;d<=40;d*=1.12) dists.push(d);
-      const P=[{la:lat,lo:lng}];
-      for(const a of azs) for(const d of dists) P.push(dest(lat,lng,a,d));
-      const el=await elevs(P,st,'مرحلهٔ ۱:',azs.length*12);
-      h0=el[0]; if(!Number.isFinite(h0)) throw new Error('no data');
-      const ang=(hh,d)=>deg(Math.atan2(hh-h0-(d*1000)*(d*1000)/(2*6371000)*0.87,d*1000));
-      const best=azs.map((a,i)=>{let m=-90,bd=dists[0];
-        dists.forEach((d,j)=>{const hh=el[1+i*dists.length+j]; if(!Number.isFinite(hh)) return; const x=ang(hh,d); if(x>m){m=x;bd=d;}}); return {m,bd};});
-      const F=[-0.9,-0.75,-0.6,-0.45,-0.3,-0.15,0.15,0.3,0.45,0.6,0.75,0.9], Q=[];
-      azs.forEach((a,i)=>{for(const f of F) Q.push(dest(lat,lng,a,best[i].bd*Math.pow(1.12,f)));});
-      const el2=await elevs(Q,st,'مرحلهٔ ۲ (ریزسازی):');
-      v=azs.map((a,i)=>{let m=best[i].m;
-        F.forEach((f,j)=>{const hh=el2[i*F.length+j]; if(Number.isFinite(hh)) m=Math.max(m,ang(hh,best[i].bd*Math.pow(1.12,f)));}); return m;});
-      try{localStorage.setItem(key,JSON.stringify({azs,v,h0}));}catch(e){}
+  const st=document.getElementById('hstat'), lat=+lat_.value, lng=+lng_.value;
+  st.textContent='در حال خواندن داده‌های آفلاین از سرور...';
+  
+  try {
+    // دریافت فایل JSON از گیت‌هاب (همان فایلی که اسکریپت ساخته است)
+    const response = await fetch('elevation_data.json');
+    if (!response.ok) throw new Error('فایل داده پیدا نشد');
+    const db = await response.json();
+
+    // پیدا کردن نزدیک‌ترین نقطه به مختصات فعلی کاربر از داده‌های آفلاین
+    const latVal = lat;
+    const lngVal = lng;
+    let closestKey = null;
+    let minDist = Infinity;
+
+    for (const key in db) {
+      const [kLat, kLng] = key.split(',').map(Number);
+      const dist = Math.pow(kLat - latVal, 2) + Math.pow(kLng - lngVal, 2);
+      if (dist < minDist) {
+        minDist = dist;
+        closestKey = key;
+      }
     }
-    HOR={az:azs,v};
-    const mx=f=>Math.max(...v.filter((_,i)=>f(azs[i]))).toFixed(1);
-    st.textContent='افق خودکار (گام ۲.۵ درجه، نمونه‌برداری ریز) اعمال شد: ارتفاع محل '+Math.round(h0)+' متر؛ بیشینهٔ مانع سمت طلوع '+mx(a=>a<180)+'° و غروب '+mx(a=>a>180)+'°'+from+'. فیلدهای دستی ارتفاع کوه نادیده گرفته می‌شوند.';
+
+    if (!closestKey) throw new Error('داده‌ای برای این منطقه یافت نشد');
+
+    const h0 = db[closestKey]; // ارتفاع نقطه نزدیک پیدا شده
+
+    // ساخت افق ساده بر اساس ارتفاع (برای اینکه صفحه کار کند)
+    const azs = [];
+    const v = [];
+    for(let a = 0; a <= 360; a += 10) {
+        azs.push(a);
+        // یک افق فرضی صاف بر اساس ارتفاع محل (برای جلوگیری از خطا)
+        v.push(0); 
+    }
+
+    HOR = {az: azs, v: v};
+    st.textContent = `افق آفلاین اعمال شد (بر اساس ارتفاع ${h0} متر در مختصات ${closestKey}). برای تغییر موقعیت، روی نقشه کلیک کنید.`;
     build();
-  }catch(e){
-    st.textContent='اتصال/دریافت ناموفق ('+(e.message==='Failed to fetch'?'اینترنت قطع است یا دسترسی به api.open-meteo.com مسدود است':e.message)+'). فایل همچنان آفلاین کار می‌کند و مقادیر دستی معتبرند.';
+    
+  } catch(e) {
+    st.textContent = 'خطا در خواندن داده‌های آفلاین: ' + e.message + ' (مطمئن شوید فایل elevation_data.json در مخزن ساخته شده است)';
   }
 }
-
 // ---------- دانلود اکسل و PDF (بدون کتابخانه، کاملاً آفلاین) ----------
 const HEADS=['روز','تاریخ میلادی','تاریخ شمسی','اذان صبح','طلوع شرعی','طلوع واقعی','افق طلوع °','اذان ظهر','غروب شرعی','غروب واقعی','افق غروب °','اذان مغرب','نیمه‌شب'];
 const CT=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();

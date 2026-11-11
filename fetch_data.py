@@ -3,11 +3,16 @@ import time
 import urllib.request
 import os
 
-# تنظیمات
-TOTAL_POINTS = 25000
-BATCH_SIZE = 500
-OUTPUT_FILE = "elevation_data.json"
-PROGRESS_FILE = "progress.json"
+# تنظیمات محدوده (یزد و همسایه‌ها)
+LAT_MIN = 29.0
+LAT_MAX = 35.5
+LNG_MIN = 51.0
+LNG_MAX = 60.0
+STEP = 0.02 # <--- تغییر گام به 0.02 درجه (دقت بالاتر)
+
+BATCH_SIZE = 1000 # در هر اجرا 1000 نقطه دانلود می‌کند
+OUTPUT_FILE = "elevation_data_002.json" # <--- نام فایل جدید
+PROGRESS_FILE = "progress_002.json"     # <--- نام فایل پیشرفت جدید
 
 def get_elevation(lat, lng):
     url = f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lng}"
@@ -21,12 +26,27 @@ def get_elevation(lat, lng):
         return None
 
 def main():
+    # ساخت لیست تمام نقاط
+    points = []
+    lat = LAT_MIN
+    while lat <= LAT_MAX:
+        lng = LNG_MIN
+        while lng <= LNG_MAX:
+            points.append((round(lat, 4), round(lng, 4)))
+            lng += STEP
+        lat += STEP
+
+    TOTAL_POINTS = len(points)
+    print(f"Total points to fetch for 0.02 degree grid: {TOTAL_POINTS}")
+
+    # خواندن پیشرفت قبلی
     if os.path.exists(PROGRESS_FILE):
         with open(PROGRESS_FILE, "r") as f:
             progress = json.load(f)
     else:
         progress = {"current_index": 0}
 
+    # خواندن داده‌های ذخیره شده
     if os.path.exists(OUTPUT_FILE):
         with open(OUTPUT_FILE, "r") as f:
             db = json.load(f)
@@ -34,13 +54,17 @@ def main():
         db = {}
 
     start = progress["current_index"]
-    print(f"Starting from point {start} to {start + BATCH_SIZE}")
+    if start >= TOTAL_POINTS:
+        print("All points for 0.02 grid already fetched.")
+        return
+
+    end = min(start + BATCH_SIZE, TOTAL_POINTS)
+    print(f"Starting from point {start} to {end}")
 
     count = 0
-    for i in range(start, min(start + BATCH_SIZE, TOTAL_POINTS)):
-        lat = 25.0 + (i * 0.01)
-        lng = 45.0 + (i * 0.01)
-        key = f"{lat:.4f},{lng:.4f}"
+    for i in range(start, end):
+        lat, lng = points[i]
+        key = f"{lat},{lng}"
         
         if key in db:
             continue
@@ -50,16 +74,17 @@ def main():
             db[key] = elev
             count += 1
         
-        time.sleep(0.15)
+        time.sleep(0.15) # تاخیر برای جلوگیری از بلاک شدن
 
-    progress["current_index"] = start + BATCH_SIZE
+    progress["current_index"] = end
 
+    # ذخیره داده‌ها
     with open(OUTPUT_FILE, "w") as f:
         json.dump(db, f)
     with open(PROGRESS_FILE, "w") as f:
         json.dump(progress, f)
 
-    print(f"Saved {count} new points. Total: {len(db)}")
+    print(f"Saved {count} new points. Total in DB: {len(db)}")
 
 if __name__ == "__main__":
     main()
